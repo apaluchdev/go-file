@@ -1,0 +1,74 @@
+basePath: /
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is a sample server for serving files.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: File Serving API
+  version: "1.0"
+paths:
+  /files:
+    get:
+      consumes:
+        - application/json
+      description: Get existing files
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+      summary: List files
+      tags:
+        - files
+    post:
+      consumes:
+        - multipart/form-data
+      description: Upload a file to the storage
+      parameters:
+        - description: File to upload
+          in: formData
+          name: file
+          required: true
+          type: file
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Upload a file
+      tags:
+        - files
+  /files/{filename}:
+    get:
+      description: Download a file by name
+      parameters:
+        - description: Filename
+          in: path
+          name: filename
+          required: true
+          type: string
+      produces:
+        - application/octet-stream
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: Download a file
+      tags:
+        - files
+swagger: "2.0"
