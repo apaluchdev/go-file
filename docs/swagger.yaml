@@ -13,13 +13,19 @@ info:
   title: File Serving API
   version: "1.0"
 paths:
-  /files:
+  /files/{pin}:
     get:
       consumes:
-        - application/json
-      description: Get existing files
+      - application/json
+      description: Get existing files for a PIN
+      parameters:
+      - description: PIN (6-8 digits)
+        in: path
+        name: pin
+        required: true
+        type: string
       produces:
-        - application/json
+      - application/json
       responses:
         "200":
           description: OK
@@ -29,19 +35,24 @@ paths:
             type: array
       summary: List files
       tags:
-        - files
+      - files
     post:
       consumes:
-        - multipart/form-data
-      description: Upload a file to the storage
+      - multipart/form-data
+      description: Upload a file to the storage for a specific PIN
       parameters:
-        - description: File to upload
-          in: formData
-          name: file
-          required: true
-          type: file
+      - description: PIN (6-8 digits)
+        in: path
+        name: pin
+        required: true
+        type: string
+      - description: File to upload
+        in: formData
+        name: file
+        required: true
+        type: file
       produces:
-        - application/json
+      - application/json
       responses:
         "200":
           description: OK
@@ -51,18 +62,23 @@ paths:
             type: object
       summary: Upload a file
       tags:
-        - files
-  /files/{filename}:
+      - files
+  /files/{pin}/{filename}:
     get:
-      description: Download a file by name
+      description: Download a file by name for a specific PIN
       parameters:
-        - description: Filename
-          in: path
-          name: filename
-          required: true
-          type: string
+      - description: PIN (6-8 digits)
+        in: path
+        name: pin
+        required: true
+        type: string
+      - description: Filename
+        in: path
+        name: filename
+        required: true
+        type: string
       produces:
-        - application/octet-stream
+      - application/octet-stream
       responses:
         "200":
           description: OK
@@ -70,5 +86,5 @@ paths:
             type: file
       summary: Download a file
       tags:
-        - files
+      - files
 swagger: "2.0"

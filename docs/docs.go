@@ -24,9 +24,9 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/files": {
+        "/files/{pin}": {
             "get": {
-                "description": "get existing files",
+                "description": "Get existing files for a PIN",
                 "consumes": [
                     "application/json"
                 ],
@@ -37,6 +37,15 @@ const docTemplate = `{
                     "files"
                 ],
                 "summary": "List files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN (6-8 digits)",
+                        "name": "pin",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -50,7 +59,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Upload a file to the storage",
+                "description": "Upload a file to the storage for a specific PIN",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -62,6 +71,13 @@ const docTemplate = `{
                 ],
                 "summary": "Upload a file",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN (6-8 digits)",
+                        "name": "pin",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "type": "file",
                         "description": "File to upload",
@@ -83,9 +99,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/files/{filename}": {
+        "/files/{pin}/{filename}": {
             "get": {
-                "description": "Download a file by name",
+                "description": "Download a file by name for a specific PIN",
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -94,6 +110,13 @@ const docTemplate = `{
                 ],
                 "summary": "Download a file",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PIN (6-8 digits)",
+                        "name": "pin",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "type": "string",
                         "description": "Filename",
