@@ -30,7 +30,19 @@ import (
 // @BasePath        /
 
 func main() {
-	router := gin.Default()
+	       router := gin.Default()
+	       // CORS middleware for React app on localhost:80
+	       router.Use(func(c *gin.Context) {
+		       c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		       c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		       c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+		       c.Writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		       if c.Request.Method == "OPTIONS" {
+			       c.AbortWithStatus(204)
+			       return
+		       }
+		       c.Next()
+	       })
 
 	// Ensure storage directory exists
 	storagePath := os.Getenv("STORAGE_PATH")
@@ -43,20 +55,20 @@ func main() {
 		os.MkdirAll(storagePath, 0755)
 	}
 
-	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		router.GET("/api/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	router.GET("/files/:pin", func(c *gin.Context) {
-		listFiles(c, storagePath)
-	})
-	router.POST("/files/:pin", func(c *gin.Context) {
-		uploadFile(c, storagePath)
-	})
-	router.GET("/files/:pin/:filename", func(c *gin.Context) {
-		downloadFile(c, storagePath)
-	})
+	       router.GET("/api/files/:pin", func(c *gin.Context) {
+		       listFiles(c, storagePath)
+	       })
+	       router.POST("/api/files/:pin", func(c *gin.Context) {
+		       uploadFile(c, storagePath)
+	       })
+	       router.GET("/api/files/:pin/:filename", func(c *gin.Context) {
+		       downloadFile(c, storagePath)
+	       })
 
 	log.Println("Starting server on :8080")
-	log.Println("Swagger documentation available at http://localhost:8080/swagger/index.html")
+		log.Println("Swagger documentation available at http://localhost:8080/api/swagger/index.html")
 	router.Run(":8080")
 }
 
@@ -86,15 +98,25 @@ func listFiles(c *gin.Context, storagePath string) {
 		return
 	}
 
-	var fileNames []string
+	type FileInfo struct {
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+	}
+
+	var fileInfos []FileInfo
 	for _, file := range files {
 		if !file.IsDir() {
-			fileNames = append(fileNames, file.Name())
+			info, err := file.Info()
+			if err != nil {
+				log.Printf("[GET /files/%s] Error getting info for file %s: %v", c.Param("pin"), file.Name(), err)
+				continue
+			}
+			fileInfos = append(fileInfos, FileInfo{Name: file.Name(), Size: info.Size()})
 		}
 	}
 
-	log.Printf("[GET /files/%s] Found %d files", c.Param("pin"), len(fileNames))
-	c.JSON(http.StatusOK, gin.H{"files": fileNames})
+	log.Printf("[GET /files/%s] Found %d files", c.Param("pin"), len(fileInfos))
+	c.JSON(http.StatusOK, gin.H{"files": fileInfos})
 }
 
 // uploadFile godoc
