@@ -64,6 +64,31 @@ paths:
       tags:
       - files
   /files/{pin}/{filename}:
+    delete:
+      description: Delete a file by name for a specific PIN
+      parameters:
+      - description: PIN (6-8 digits)
+        in: path
+        name: pin
+        required: true
+        type: string
+      - description: Filename
+        in: path
+        name: filename
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete a file
+      tags:
+      - files
     get:
       description: Download a file by name for a specific PIN
       parameters:

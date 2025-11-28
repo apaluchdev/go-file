@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"golang.org/x/time/rate"
 
 	_ "github.com/apaluchdev/go-file/docs"
 )
@@ -31,18 +34,57 @@ import (
 
 func main() {
 	       router := gin.Default()
+		   router.MaxMultipartMemory = 2 << 30 // 2GB
 	       // CORS middleware for React app on localhost:80
 	       router.Use(func(c *gin.Context) {
 		       c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
 		       c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		       c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
-		       c.Writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		       c.Writer.Header().Set("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS")
 		       if c.Request.Method == "OPTIONS" {
 			       c.AbortWithStatus(204)
 			       return
 		       }
 		       c.Next()
 	       })
+
+	// Rate limiting middleware - 10 requests per minute per IP
+	var (
+		visitors = make(map[string]*rate.Limiter)
+		mu       sync.Mutex
+	)
+
+	getVisitor := func(ip string) *rate.Limiter {
+		mu.Lock()
+		defer mu.Unlock()
+
+		limiter, exists := visitors[ip]
+		if !exists {
+			// Allow 10 requests per minute (1 request every 6 seconds on average)
+			limiter = rate.NewLimiter(rate.Every(6*time.Second), 10)
+			visitors[ip] = limiter
+		}
+		return limiter
+	}
+
+	router.Use(func(c *gin.Context) {
+		// Skip rate limiting for swagger docs
+		if len(c.Request.URL.Path) >= 13 && c.Request.URL.Path[:13] == "/api/swagger/" {
+			c.Next()
+			return
+		}
+
+		limiter := getVisitor(c.ClientIP())
+		if !limiter.Allow() {
+			log.Printf("[RATE LIMIT] IP %s exceeded rate limit", c.ClientIP())
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "Rate limit exceeded. Please try again later.",
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 
 	// Ensure storage directory exists
 	storagePath := os.Getenv("STORAGE_PATH")
@@ -65,6 +107,9 @@ func main() {
 	       })
 	       router.GET("/api/files/:pin/:filename", func(c *gin.Context) {
 		       downloadFile(c, storagePath)
+	       })
+	       router.DELETE("/api/files/:pin/:filename", func(c *gin.Context) {
+		       deleteFile(c, storagePath)
 	       })
 
 	log.Println("Starting server on :8080")
@@ -140,21 +185,29 @@ func uploadFile(c *gin.Context, storagePath string) {
 		os.MkdirAll(pinPath, 0755)
 	}
 	
-	file, err := c.FormFile("file")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+	       file, err := c.FormFile("file")
+	       if err != nil {
+		       c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		       return
+	       }
 
-	filename := filepath.Base(file.Filename)
-	if err := c.SaveUploadedFile(file, filepath.Join(pinPath, filename)); err != nil {
-		log.Printf("[POST /files/%s] Error saving file %s: %v", pin, filename, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	       // Prevent uploads over 5GB
+	       const maxFileSize = 5 * 1024 * 1024 * 1024 // 5GB in bytes
+	       if file.Size > maxFileSize {
+		       log.Printf("[POST /files/%s] File too large: %s (%d bytes)", pin, file.Filename, file.Size)
+		       c.JSON(http.StatusBadRequest, gin.H{"error": "File size exceeds 5GB limit"})
+		       return
+	       }
 
-	log.Printf("[POST /files/%s] File uploaded successfully: %s", pin, filename)
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("File %s uploaded successfully", filename)})
+	       filename := filepath.Base(file.Filename)
+	       if err := c.SaveUploadedFile(file, filepath.Join(pinPath, filename)); err != nil {
+		       log.Printf("[POST /files/%s] Error saving file %s: %v", pin, filename, err)
+		       c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		       return
+	       }
+
+	       log.Printf("[POST /files/%s] File uploaded successfully: %s", pin, filename)
+	       c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("File %s uploaded successfully", filename)})
 }
 
 // downloadFile godoc
@@ -180,4 +233,35 @@ func downloadFile(c *gin.Context, storagePath string) {
 
 	log.Printf("[GET /files/%s/%s] Serving file: %s", pin, filename, filename)
 	c.File(filePath)
+}
+
+// deleteFile godoc
+// @Summary      Delete a file
+// @Description  Delete a file by name for a specific PIN
+// @Tags         files
+// @Produce      json
+// @Param        pin path string true "PIN (6-8 digits)"
+// @Param        filename path string true "Filename"
+// @Success      200  {object}  map[string]string
+// @Router       /files/{pin}/{filename} [delete]
+func deleteFile(c *gin.Context, storagePath string) {
+	pin := c.Param("pin")
+	filename := c.Param("filename")
+	log.Printf("[DELETE /files/%s/%s] Delete request for file: %s (PIN: %s)", pin, filename, filename, pin)
+	filePath := filepath.Join(storagePath, pin, filename)
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		log.Printf("[DELETE /files/%s/%s] File not found: %s", pin, filename, filePath)
+		c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})
+		return
+	}
+
+	if err := os.Remove(filePath); err != nil {
+		log.Printf("[DELETE /files/%s/%s] Error deleting file: %v", pin, filename, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete file"})
+		return
+	}
+
+	log.Printf("[DELETE /files/%s/%s] File deleted successfully: %s", pin, filename, filename)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("File %s deleted successfully", filename)})
 }
